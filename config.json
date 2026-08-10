@@ -1,0 +1,29 @@
+{
+  "Pedidos": {
+    "RootPath": "\\\\gerencialz.canariasalud\\archivos\\Logistica\\COMPRAS\\Pedidos Liberados",
+    "ProvidersFile": "Proveedores.xlsx",
+    "SentFolder": "pedidos enviados",
+    "ReprintsFolder": "reimpresiones",
+    "ReportsFolder": "reportes",
+    "PollMinutes": 5,
+    "StableSeconds": 10,
+    "MaxMailAttempts": 3,
+    "Retry1Minutes": 5,
+    "Retry2Minutes": 15,
+    "StateFolder": "%ProgramData%\\SCS\\PedidosLiberados"
+  },
+  "Mail": {
+    "Enabled": false,
+    "SmtpHost": "PENDIENTE_CONFIGURAR",
+    "SmtpPort": 587,
+    "EnableSsl": true,
+    "AuthenticationMode": "WindowsIntegrated",
+    "Username": "",
+    "PasswordEnvironmentVariable": "PEDIDOS_SMTP_PASSWORD",
+    "FromAddress": "logisticalz.scs@gobiernodecanarias.org",
+    "FromName": "Logística - Gerencia de Servicios Sanitarios de Lanzarote",
+    "RequestReadReceipt": true,
+    "RequestDeliveryReceipt": true,
+    "SignatureFile": "firma.html"
+  }
+}
