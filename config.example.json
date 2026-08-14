@@ -10,7 +10,7 @@
     "MaxMailAttempts": 3,
     "Retry1Minutes": 5,
     "Retry2Minutes": 15,
-    "StateFolder": "%ProgramData%\\SCS\\PedidosLiberados"
+    "StateFolder": "%ProgramData%\\PedidosLiberados"
   },
   "Mail": {
     "Enabled": false,
@@ -20,8 +20,8 @@
     "AuthenticationMode": "WindowsIntegrated",
     "Username": "",
     "PasswordEnvironmentVariable": "PEDIDOS_SMTP_PASSWORD",
-    "FromAddress": "logisticalz.scs@gobiernodecanarias.org",
-    "FromName": "Logística - Gerencia de Servicios Sanitarios de Lanzarote",
+    "FromAddress": "correo@correo.com",
+    "FromName": "Remitente",
     "RequestReadReceipt": true,
     "RequestDeliveryReceipt": true,
     "SignatureFile": "firma.html"
