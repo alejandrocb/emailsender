@@ -22,6 +22,7 @@
     "PasswordEnvironmentVariable": "PEDIDOS_SMTP_PASSWORD",
     "FromAddress": "correo@correo.com",
     "FromName": "Remitente",
+    "OrganizationName": "Organizacion",
     "RequestReadReceipt": true,
     "RequestDeliveryReceipt": true,
     "SignatureFile": "firma.html"

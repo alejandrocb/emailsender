@@ -311,7 +311,8 @@ function Send-OrderMail {
             }
         }
 
-        $msg.Subject = "Pedido Gerencia de Servicios Sanitarios de Lanzarote n" + [char]186 + " " + $Record.Pedido + " " + [char]8211 + " " + $Record.Empresa
+        $orgName = if ($MailCfg.PSObject.Properties.Name -contains "OrganizationName") { [string]$MailCfg.OrganizationName } else { "" }
+        $msg.Subject = ("Pedido " + $orgName).TrimEnd() + " n" + [char]186 + " " + $Record.Pedido + " " + [char]8211 + " " + $Record.Empresa
 
         $signature = ""
         $sigPath = Join-Path $ScriptRoot ([string]$MailCfg.SignatureFile)
@@ -323,7 +324,7 @@ function Send-OrderMail {
         $pedidoEsc = [System.Net.WebUtility]::HtmlEncode([string]$Record.Pedido)
         $msg.Body = "<p>Adjunto remitimos Pedido n&ordm;: " + $pedidoEsc + " para " + $empresaEsc + "</p>" +
                     "<p>Rogamos confirmaci&oacute;n de la recepci&oacute;n de este correo y/o activar en su cuenta de correo electr&oacute;nico la confirmaci&oacute;n autom&aacute;tica de recepci&oacute;n de correos.</p>" +
-                    "<p>En caso de incidencias con el pedido contactar con: logisticalz.scs@gobiernodecanarias.org</p>" +
+                    "<p>En caso de incidencias con el pedido contactar con: " + [System.Net.WebUtility]::HtmlEncode([string]$MailCfg.FromAddress) + "</p>" +
                     "<p>Atentamente,</p>" + $signature
         $msg.IsBodyHtml = $true
         $msg.BodyEncoding = [Text.Encoding]::UTF8
