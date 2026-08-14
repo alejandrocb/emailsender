@@ -2,11 +2,11 @@
 
 ## 1. Descripción
 
-**Pedidos Liberados SCS** es una herramienta local para Windows destinada a automatizar el tratamiento y envío por correo electrónico de pedidos liberados generados desde SEFLOGIC/SAP para la **Gerencia de Servicios Sanitarios del Área de Salud de Lanzarote**.
+**Pedidos Liberados SCS** es una aplicación para Windows destinada a automatizar el tratamiento y envío por correo electrónico de pedidos liberados generados desde SEFLOGIC/SAP para la **Gerencia de Servicios Sanitarios del Área de Salud de Lanzarote**. Está pensada para desplegarse y ejecutarse de forma desatendida en un servidor Windows.
 
 El sistema revisa periódicamente una carpeta de red, identifica los documentos PDF correspondientes a pedidos, extrae del nombre del archivo los datos necesarios, consulta una base de proveedores mantenida en Excel, prepara el correo electrónico, adjunta el PDF y gestiona el archivo y la trazabilidad del proceso.
 
-La aplicación está diseñada para trabajar de forma continua en un equipo Windows mediante el **Programador de tareas de Windows**, con una frecuencia prevista de **cada 5 minutos**.
+La aplicación está diseñada para trabajar de forma continua en un servidor Windows mediante el **Programador de tareas de Windows**, con una frecuencia prevista de **cada 5 minutos**.
 
 La versión actual no necesita:
 
@@ -382,17 +382,13 @@ La frecuencia prevista es:
 cada 5 minutos
 ```
 
-La instalación mediante:
-
-```text
-INSTALAR_TAREA.cmd
-```
-
-crea una tarea en el Programador de tareas de Windows denominada:
+La ejecución periódica se registra como una tarea del Programador de tareas de Windows denominada:
 
 ```text
 SCS - Pedidos Liberados
 ```
+
+El procedimiento de registro se describe en la sección 29 (Despliegue como tarea programada).
 
 ---
 
@@ -658,11 +654,7 @@ dentro de:
 reportes
 ```
 
-Puede abrirse mediante:
-
-```text
-PANEL_CONTROL.cmd
-```
+Se abre directamente con un navegador desde la carpeta `reportes`.
 
 El panel muestra actualmente:
 
@@ -686,80 +678,66 @@ La modificación de proveedores se realiza exclusivamente mediante Excel.
 
 ## 28. Ejecución manual
 
-Puede forzarse una revisión mediante:
+Para forzar una revisión inmediata, sin esperar al ciclo programado, se ejecuta el motor directamente con el parámetro `-Manual`:
 
-```text
-EJECUTAR_AHORA.cmd
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "PedidosLiberados.ps1" -Manual
 ```
 
-La versión actual valida previamente la sintaxis del motor PowerShell.
+Esto realiza un ciclo completo: lectura, clasificación, envío (según configuración) y generación de informes.
 
-Si la validación es correcta, ejecuta un ciclo completo.
+Comprobación opcional de sintaxis antes de desplegar una nueva versión del motor:
 
----
-
-## 29. Validación de sintaxis
-
-Antes de realizar pruebas puede ejecutarse:
-
-```text
-VALIDAR_SINTAXIS.cmd
-```
-
-Este archivo invoca:
-
-```text
-Validar-Sintaxis.ps1
-```
-
-y utiliza el parser del propio Windows PowerShell para comprobar que `PedidosLiberados.ps1` no contiene errores de sintaxis.
-
-El resultado esperado es:
-
-```text
-[OK] Sintaxis PowerShell valida.
+```powershell
+$e = $null
+[System.Management.Automation.Language.Parser]::ParseFile("PedidosLiberados.ps1", [ref]$null, [ref]$e) | Out-Null
+if ($e.Count) { $e | ForEach-Object { $_.Message } } else { "OK: sintaxis valida" }
 ```
 
 ---
 
-## 30. Instalación automática
+## 29. Despliegue como tarea programada
 
-Una vez validado el funcionamiento manual, puede instalarse la ejecución periódica mediante:
+La ejecución periódica se realiza mediante el **Programador de tareas de Windows del servidor**. La tarea prevista se denomina `SCS - Pedidos Liberados` y se ejecuta cada 5 minutos con una cuenta de servicio corporativa (ver requisitos en la sección 13).
 
-```text
-INSTALAR_TAREA.cmd
+Registro de la tarea (PowerShell, como administrador):
+
+```powershell
+$script = "C:\ruta\al\aplicativo\PedidosLiberados.ps1"
+
+$action = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$script`""
+
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5)
+
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable `
+    -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 4)
+
+Register-ScheduledTask -TaskName "SCS - Pedidos Liberados" `
+    -Action $action -Trigger $trigger -Settings $settings `
+    -User "DOMINIO\cuenta_servicio" -RunLevel Highest
 ```
 
-Debe ejecutarse como administrador.
+Windows solicitará la contraseña de la cuenta de servicio y la almacenará de forma protegida; no se guarda en ningún fichero del repositorio.
 
-El instalador:
+Eliminación de la tarea:
 
-1. solicita la cuenta corporativa que ejecutará la tarea;
-2. solicita sus credenciales;
-3. registra la tarea;
-4. configura la ejecución periódica cada 5 minutos.
+```powershell
+schtasks /Delete /TN "SCS - Pedidos Liberados" /F
+```
 
 ---
 
-## 31. Desinstalación
+## 30. Configuración
 
-Puede eliminarse la tarea mediante:
+La configuración principal está en `config.json`. El repositorio incluye una plantilla, `config.example.json`; al desplegar en el servidor se copia a `config.json` y se completa con los valores reales:
 
-```text
-DESINSTALAR_TAREA.cmd
+```powershell
+Copy-Item config.example.json config.json
 ```
 
-Debe ejecutarse con privilegios administrativos.
-
----
-
-## 32. Configuración
-
-La configuración principal está en:
-
-```text
-config.json
-```
+`config.json` contiene datos sensibles (SMTP, rutas corporativas) y está excluido del control de versiones mediante `.gitignore`.
 
 Incluye:
 
@@ -780,79 +758,22 @@ Incluye:
 
 ---
 
-## 33. Archivos principales del programa
+## 31. Archivos del repositorio
 
 ```text
-PedidosLiberados.ps1
+PedidosLiberados.ps1     Motor principal (todo el proceso).
+config.example.json      Plantilla de configuración (se copia a config.json).
+Proveedores.xlsx         Base de proveedores (plantilla inicial).
+firma.html               Firma opcional del correo.
+README.md                Esta documentación.
+.gitignore               Exclusiones del control de versiones.
 ```
 
-Motor principal.
-
-```text
-config.json
-```
-
-Configuración.
-
-```text
-Proveedores.xlsx
-```
-
-Base de proveedores.
-
-```text
-firma.html
-```
-
-Firma opcional.
-
-```text
-VALIDAR_SINTAXIS.cmd
-Validar-Sintaxis.ps1
-```
-
-Comprobación del código PowerShell.
-
-```text
-EJECUTAR_AHORA.cmd
-```
-
-Ejecución manual.
-
-```text
-INSTALAR_TAREA.cmd
-Instalar-Tarea.ps1
-```
-
-Instalación de la tarea programada.
-
-```text
-PANEL_CONTROL.cmd
-```
-
-Acceso al panel.
-
-```text
-CONFIGURAR_CORREO.cmd
-```
-
-Abre la configuración de correo.
-
-```text
-DIAGNOSTICO.cmd
-```
-
-Diagnóstico básico.
-
-```text
-DESINSTALAR_TAREA.cmd
-```
-
-Elimina la tarea programada.
+El fichero `config.json` (configuración real con datos sensibles) y los certificados `*.cer` no se versionan: se aportan directamente en el servidor de despliegue.
 
 ---
 
-## 34. Flujo resumido
+## 32. Flujo resumido
 
 ```text
 PDF en carpeta raíz
@@ -902,7 +823,7 @@ Analizar nombre
 
 ---
 
-## 35. Limitaciones actuales
+## 33. Limitaciones actuales
 
 La versión actual presenta deliberadamente las siguientes limitaciones:
 
@@ -921,28 +842,27 @@ La versión actual presenta deliberadamente las siguientes limitaciones:
 
 ---
 
-## 36. Estado actual de implantación
+## 34. Estado actual de implantación
 
 La versión actual corresponde a una fase de **prueba funcional previa a la activación del envío real**.
 
 El orden recomendado es:
 
-1. Validar sintaxis.
-2. Ejecutar manualmente con correo desactivado.
-3. Comprobar reconocimiento de PDF.
-4. Comprobar lectura de `Proveedores.xlsx`.
-5. Comprobar reimpresiones.
-6. Comprobar reportes.
-7. Comprobar panel.
-8. Obtener los parámetros corporativos de Exchange.
-9. Realizar una prueba con una dirección controlada.
-10. Activar el envío.
-11. Instalar la tarea automática cada 5 minutos.
-12. Validar el funcionamiento con la cuenta de servicio corporativa.
+1. Ejecutar manualmente con correo desactivado (`-Manual`).
+2. Comprobar reconocimiento de PDF.
+3. Comprobar lectura de `Proveedores.xlsx`.
+4. Comprobar reimpresiones.
+5. Comprobar reportes.
+6. Comprobar panel.
+7. Obtener los parámetros corporativos de Exchange.
+8. Realizar una prueba con una dirección controlada.
+9. Activar el envío.
+10. Registrar la tarea automática cada 5 minutos.
+11. Validar el funcionamiento con la cuenta de servicio corporativa.
 
 ---
 
-## 37. Principio de funcionamiento
+## 35. Principio de funcionamiento
 
 El programa actúa únicamente como herramienta de automatización de la **remisión material de pedidos ya liberados**.
 
