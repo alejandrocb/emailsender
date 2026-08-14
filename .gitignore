@@ -1,0 +1,29 @@
+# Configuración local y credenciales indirectas
+config.json
+.env
+.env.*
+
+# Certificados corporativos
+*.cer
+*.crt
+*.pfx
+*.p12
+
+# Estado, registros e informes generados
+estado.json*
+eventos/
+reportes/
+pedidos enviados/
+reimpresiones/
+*.log
+
+# Archivos temporales y copias de seguridad
+*.tmp
+*.bak
+~$*.xlsx
+
+# Metadatos del sistema y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
