@@ -24,6 +24,17 @@ function Expand-EnvPath([string]$Path) {
     return [Environment]::ExpandEnvironmentVariables($Path)
 }
 
+function Replace-File {
+    param([string]$Source, [string]$Destination)
+    if (Test-Path -LiteralPath $Destination) {
+        $backup = "$Destination.$([guid]::NewGuid().ToString('N')).bak"
+        [IO.File]::Replace($Source, $Destination, $backup)
+        Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+    } else {
+        Move-Item -LiteralPath $Source -Destination $Destination
+    }
+}
+
 function Get-State {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
@@ -32,6 +43,11 @@ function Get-State {
         if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
         $obj = $raw | ConvertFrom-Json
         if ($null -eq $obj) { return @() }
+        if (@($obj).Count -eq 1 -and
+            $obj[0].PSObject.Properties.Name -contains "value" -and
+            $obj[0].PSObject.Properties.Name -contains "Count") {
+            return @($obj[0].value)
+        }
         return @($obj)
     } catch {
         Write-Log "No se pudo leer el estado: $($_.Exception.Message)" "ERROR"
@@ -41,9 +57,11 @@ function Get-State {
 
 function Save-State {
     param([object[]]$State, [string]$Path)
+
     $tmp = "$Path.tmp"
-    @($State) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tmp -Encoding UTF8
-    Move-Item -LiteralPath $tmp -Destination $Path -Force
+    $json = ConvertTo-Json -InputObject ([object[]]@($State)) -Depth 8
+    Set-Content -LiteralPath $tmp -Value $json -Encoding UTF8
+    Replace-File $tmp $Path
 }
 
 function Find-StateRecord {
@@ -151,17 +169,18 @@ function Read-ZipText {
 
 function Import-XlsxFirstSheet {
     param([string]$Path)
+    Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [IO.Compression.ZipFile]::OpenRead($Path)
+    $fileStream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+        [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+    $zip = New-Object IO.Compression.ZipArchive($fileStream, [IO.Compression.ZipArchiveMode]::Read, $false)
     try {
         $shared = @()
         $sstText = Read-ZipText $zip "xl/sharedStrings.xml"
         if ($sstText) {
             [xml]$sst = $sstText
             foreach ($si in $sst.sst.si) {
-                if ($si.t) { $shared += [string]$si.t }
-                elseif ($si.r) { $shared += (($si.r | ForEach-Object { [string]$_.t }) -join "") }
-                else { $shared += "" }
+                $shared += [string]$si.InnerText
             }
         }
 
@@ -178,22 +197,28 @@ function Import-XlsxFirstSheet {
 
         [xml]$ws = Read-ZipText $zip $sheetPath
         $matrix = @()
-        foreach ($row in @($ws.worksheet.sheetData.row)) {
+        foreach ($row in @($ws.SelectNodes("/*[local-name()='worksheet']/*[local-name()='sheetData']/*[local-name()='row']"))) {
             $values = @{}
             $maxCol = 0
-            foreach ($cell in @($row.c)) {
-                $idx = Get-ColIndex ([string]$cell.r)
+            foreach ($cell in @($row.SelectNodes("./*[local-name()='c']"))) {
+                $idx = Get-ColIndex ([string]$cell.GetAttribute("r"))
                 if ($idx -gt $maxCol) { $maxCol = $idx }
-                $t = [string]$cell.t
+                $t = [string]$cell.GetAttribute("t")
                 $val = ""
                 if ($t -eq "s") {
-                    $i = [int]$cell.v
-                    if ($i -ge 0 -and $i -lt $shared.Count) { $val = $shared[$i] }
+                    $valueNode = $cell.SelectSingleNode("./*[local-name()='v']")
+                    if ($valueNode) {
+                        $i = [int]$valueNode.InnerText
+                        if ($i -ge 0 -and $i -lt $shared.Count) { $val = $shared[$i] }
+                    }
                 } elseif ($t -eq "inlineStr") {
-                    if ($cell.is.t) { $val = [string]$cell.is.t }
-                    elseif ($cell.is.r) { $val = (($cell.is.r | ForEach-Object { [string]$_.t }) -join "") }
+                    $inline = $cell.SelectSingleNode("./*[local-name()='is']")
+                    if ($inline) {
+                        $val = [string]$inline.InnerText
+                    }
                 } else {
-                    $val = [string]$cell.v
+                    $valueNode = $cell.SelectSingleNode("./*[local-name()='v']")
+                    if ($valueNode) { $val = [string]$valueNode.InnerText }
                 }
                 $values[$idx] = $val
             }
@@ -218,7 +243,24 @@ function Import-XlsxFirstSheet {
         return $result
     } finally {
         $zip.Dispose()
+        $fileStream.Dispose()
     }
+}
+
+function Split-MailAddresses {
+    param([string]$Value)
+    $result = @()
+    foreach ($item in @([string]$Value -split '[;,]')) {
+        $address = $item.Trim()
+        if (-not $address) { continue }
+        try {
+            $parsed = New-Object System.Net.Mail.MailAddress($address)
+            $result += $parsed.Address
+        } catch {
+            throw "Direccion de correo no valida: $address"
+        }
+    }
+    return @($result)
 }
 
 function Get-Provider {
@@ -228,23 +270,22 @@ function Get-Provider {
         if (-not ($r.PSObject.Properties.Name -contains "COD_PROVEEDOR")) { continue }
         if (([string]$r.COD_PROVEEDOR).Trim() -ne $Code.Trim()) { continue }
         $activo = if ($r.PSObject.Properties.Name -contains "ACTIVO") { ([string]$r.ACTIVO).Trim().ToUpperInvariant() } else { "SI" }
-        if ($activo -notin @("SI","SI","YES","TRUE","1","")) { return $null }
+        if ($activo -notin @("SI","SÍ","YES","TRUE","1","")) { return $null }
 
-        $primary = ""
-        if ($r.PSObject.Properties.Name -contains "EMAIL_1") { $primary = ([string]$r.EMAIL_1).Trim() }
+        $primary = @()
+        if ($r.PSObject.Properties.Name -contains "EMAIL_1") { $primary = @(Split-MailAddresses ([string]$r.EMAIL_1)) }
         $cc = @()
         $emailProps = @($r.PSObject.Properties.Name | Where-Object { $_ -match '^EMAIL_(\d+)$' } |
             Sort-Object { [int]([regex]::Match($_,'\d+').Value) })
         foreach ($p in $emailProps) {
             if ($p -eq "EMAIL_1") { continue }
-            $v = ([string]$r.$p).Trim()
-            if ($v) { $cc += $v }
+            $cc += @(Split-MailAddresses ([string]$r.$p))
         }
         return [pscustomobject]@{
             Code = $Code
             Name = if ($r.PSObject.Properties.Name -contains "NOMBRE_PROVEEDOR") { ([string]$r.NOMBRE_PROVEEDOR).Trim() } else { "" }
-            Primary = $primary
-            CC = $cc
+            Primary = @($primary)
+            CC = @($cc)
         }
     }
     return $null
@@ -260,10 +301,13 @@ function Send-OrderMail {
     $smtp = $null
     try {
         $msg.From = New-Object System.Net.Mail.MailAddress([string]$MailCfg.FromAddress, [string]$MailCfg.FromName)
-        $msg.To.Add([string]$Record.Para)
+        foreach ($addr in (Split-MailAddresses ([string]$Record.Para))) {
+            $msg.To.Add($addr)
+        }
+        if ($msg.To.Count -eq 0) { throw "El proveedor no tiene destinatarios principales validos." }
         if ($Record.CC) {
-            foreach ($addr in ([string]$Record.CC -split ';')) {
-                if (-not [string]::IsNullOrWhiteSpace($addr)) { $msg.CC.Add($addr.Trim()) }
+            foreach ($addr in (Split-MailAddresses ([string]$Record.CC))) {
+                $msg.CC.Add($addr)
             }
         }
 
@@ -335,6 +379,7 @@ function Col-Letter([int]$n) {
 function Export-SimpleXlsx {
     param([string]$Path, [object[]]$Rows, [string[]]$Columns)
     try {
+        Add-Type -AssemblyName System.IO.Compression
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $tmpRoot = Join-Path $env:TEMP ("PedidosXlsx_" + [guid]::NewGuid().ToString("N"))
         New-Item -ItemType Directory -Path (Join-Path $tmpRoot "_rels") -Force | Out-Null
@@ -418,8 +463,18 @@ function Export-SimpleXlsx {
 
         $tempZip = "$Path.tmp"
         if (Test-Path -LiteralPath $tempZip) { Remove-Item -LiteralPath $tempZip -Force }
-        [IO.Compression.ZipFile]::CreateFromDirectory($tmpRoot, $tempZip)
-        Move-Item -LiteralPath $tempZip -Destination $Path -Force
+        $archive = [IO.Compression.ZipFile]::Open($tempZip, [IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($sourceFile in Get-ChildItem -LiteralPath $tmpRoot -Recurse -File) {
+                $entryName = $sourceFile.FullName.Substring($tmpRoot.Length).TrimStart('\','/') -replace '\\','/'
+                [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $archive, $sourceFile.FullName, $entryName, [IO.Compression.CompressionLevel]::Optimal
+                ) | Out-Null
+            }
+        } finally {
+            $archive.Dispose()
+        }
+        Replace-File $tempZip $Path
     } finally {
         if ($tmpRoot -and (Test-Path -LiteralPath $tmpRoot)) { Remove-Item -LiteralPath $tmpRoot -Recurse -Force -ErrorAction SilentlyContinue }
     }
@@ -540,6 +595,7 @@ try {
             $dest = Join-Path $destDir $r.FileName
             if (Test-Path -LiteralPath $dest) { throw "Ya existe un archivo con el mismo nombre en destino." }
             Move-Item -LiteralPath $r.FullPath -Destination $dest
+            $r.FullPath = $dest
             $r.Estado = "ARCHIVADO"; $r.ArchivedAt = (Get-Date).ToString("o"); $r.UpdatedAt = (Get-Date).ToString("o"); $r.Error = ""
             Add-Event $r "ARCHIVADO"
             Save-State $state $statePath
@@ -581,6 +637,7 @@ try {
                     $record = New-StateRecord $file $parsed
                     $state += $record
                 }
+                $record.FullPath=$dest
                 $record.Estado="REIMPRESION"; $record.UpdatedAt=(Get-Date).ToString("o"); $record.Error=""
                 Add-Event $record "REIMPRESION"
                 Save-State $state $statePath
@@ -600,7 +657,7 @@ try {
             $record.FullPath = $file.FullName
         }
 
-        if ($record.Estado -in @("ARCHIVADO","REIMPRESION","REVISION_MANUAL","INCIDENCIA_PERMANENTE")) { continue }
+        if ($record.Estado -in @("ARCHIVADO","REIMPRESION","REVISION_MANUAL","INCIDENCIA_PERMANENTE","DUPLICADO")) { continue }
         if ($record.NextAttempt) {
             try {
                 if ((Get-Date) -lt [datetime]$record.NextAttempt) { continue }
@@ -629,7 +686,7 @@ try {
                 Save-State $state $statePath
                 continue
             }
-            if ([string]::IsNullOrWhiteSpace($provider.Primary)) {
+            if (@($provider.Primary).Count -eq 0) {
                 $record.Estado="ESPERA_DATOS"; $record.Error="Proveedor localizado, pero EMAIL_1 no esta informado."; $record.UpdatedAt=(Get-Date).ToString("o"); $record.NextAttempt=""
                 $record.Empresa=$provider.Name
                 Add-Event $record "ESPERA_DATOS" $record.Error
@@ -638,7 +695,7 @@ try {
             }
 
             $record.Empresa = $provider.Name
-            $record.Para = $provider.Primary
+            $record.Para = (@($provider.Primary) -join ";")
             $record.CC = ($provider.CC -join ";")
             $record.Estado = "ENVIANDO"
             $record.Error = ""
@@ -661,6 +718,7 @@ try {
                 $dest = Join-Path $destDir $file.Name
                 if (Test-Path -LiteralPath $dest) { throw "Ya existe un archivo con el mismo nombre en pedidos enviados." }
                 Move-Item -LiteralPath $file.FullName -Destination $dest
+                $record.FullPath=$dest
                 $record.Estado="ARCHIVADO"; $record.ArchivedAt=(Get-Date).ToString("o"); $record.UpdatedAt=(Get-Date).ToString("o")
                 Add-Event $record "ARCHIVADO"
                 Save-State $state $statePath
