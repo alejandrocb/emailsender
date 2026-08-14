@@ -23,39 +23,27 @@ El motor actual está implementado mediante **Windows PowerShell 5.1**.
 
 ## 2. Carpeta de trabajo
 
-La carpeta principal vigilada por el sistema es:
+La carpeta principal vigilada por el sistema se define en la configuración, en la clave `Pedidos.RootPath`. En ella se depositan los PDF pendientes de tratamiento.
+
+Dentro de esa misma ubicación el programa utiliza o crea las siguientes subcarpetas, cuyos nombres proceden también de la configuración:
 
 ```text
-\\gerencialz.canariasalud\archivos\Logistica\COMPRAS\Pedidos Liberados
-```
-
-En esta carpeta se depositan los PDF pendientes de tratamiento.
-
-El programa también utiliza o crea dentro de esta misma ubicación las siguientes carpetas:
-
-```text
-Pedidos Liberados
+<Pedidos.RootPath>
 │
-├── Proveedores.xlsx
-├── pedidos enviados
+├── <Pedidos.ProvidersFile>      (p. ej. Proveedores.xlsx)
+├── <Pedidos.SentFolder>         (p. ej. pedidos enviados)
 │   └── AAAA
 │       └── MM
 │
-├── reimpresiones
+├── <Pedidos.ReprintsFolder>     (p. ej. reimpresiones)
 │
-└── reportes
+└── <Pedidos.ReportsFolder>      (p. ej. reportes)
     ├── REPORT_PEDIDOS_AAAAMMDD.xlsx
     ├── INCIDENCIAS_PEDIDOS.xlsx
     └── panel_control.html
 ```
 
-Las carpetas de año y mes se crean automáticamente cuando sean necesarias.
-
-Ejemplo:
-
-```text
-pedidos enviados\2026\08
-```
+Las carpetas de año y mes se crean automáticamente cuando sean necesarias, por ejemplo `<Pedidos.SentFolder>\2026\08`.
 
 ---
 
@@ -156,17 +144,7 @@ La gestión posterior corresponde al personal de Logística.
 
 ## 6. Base de proveedores
 
-La base se denomina:
-
-```text
-Proveedores.xlsx
-```
-
-y debe encontrarse en:
-
-```text
-\\gerencialz.canariasalud\archivos\Logistica\COMPRAS\Pedidos Liberados
-```
+La base de proveedores es el fichero Excel indicado en `Pedidos.ProvidersFile` (por defecto, `Proveedores.xlsx`) y debe encontrarse en la carpeta raíz definida en `Pedidos.RootPath`.
 
 El personal puede abrir y modificar directamente este Excel.
 
@@ -246,30 +224,26 @@ Al informar posteriormente el correo en `Proveedores.xlsx`, el sistema podrá co
 
 ## 9. Correo electrónico
 
-La cuenta remitente prevista es:
-
-```text
-logisticalz.scs@gobiernodecanarias.org
-```
+La cuenta remitente se define en `Mail.FromAddress` y el nombre mostrado del remitente en `Mail.FromName`.
 
 ### Asunto
 
-El asunto se construye de la siguiente forma:
+El asunto se construye de la siguiente forma (la organización procede de `Mail.OrganizationName`):
 
 ```text
-Pedido Gerencia de Servicios Sanitarios de Lanzarote nº 4503204516 – NOMBRE EMPRESA
+Pedido <Mail.OrganizationName> nº <número de pedido> – <NOMBRE EMPRESA>
 ```
 
 ### Cuerpo
 
-El texto utilizado actualmente es:
+El texto utilizado actualmente es (la dirección de contacto procede de `Mail.FromAddress`):
 
 ```text
-Adjunto remitimos Pedido nº: 4503204516 para NOMBRE DE LA EMPRESA
+Adjunto remitimos Pedido nº: <número de pedido> para <NOMBRE DE LA EMPRESA>
 
 Rogamos confirmación de la recepción de este correo y/o activar en su cuenta de correo electrónico la confirmación automática de recepción de correos.
 
-En caso de incidencias con el pedido contactar con: logisticalz.scs@gobiernodecanarias.org
+En caso de incidencias con el pedido contactar con: <Mail.FromAddress>
 
 Atentamente,
 ```
@@ -329,7 +303,9 @@ Los principales valores son:
   "SmtpPort": 587,
   "EnableSsl": true,
   "AuthenticationMode": "WindowsIntegrated",
-  "FromAddress": "logisticalz.scs@gobiernodecanarias.org"
+  "FromAddress": "correo@correo.com",
+  "FromName": "Remitente",
+  "OrganizationName": "Organizacion"
 }
 ```
 
@@ -366,7 +342,7 @@ La cuenta debe disponer, como mínimo, de:
 - acceso de escritura;
 - permiso para crear carpetas;
 - permiso para mover PDF;
-- acceso a `Proveedores.xlsx`;
+- acceso al fichero de proveedores (`Pedidos.ProvidersFile`);
 - acceso a la carpeta de reportes;
 - autorización para utilizar el sistema de correo configurado.
 
@@ -376,11 +352,7 @@ La tarea puede funcionar aunque no exista una sesión interactiva de usuario abi
 
 ## 14. Frecuencia de ejecución
 
-La frecuencia prevista es:
-
-```text
-cada 5 minutos
-```
+La frecuencia de comprobación se define en `Pedidos.PollMinutes` (por defecto, 5 minutos).
 
 La ejecución periódica se registra como una tarea del Programador de tareas de Windows denominada:
 
@@ -517,13 +489,9 @@ El archivo queda pendiente de revisión.
 
 ## 22. Registro interno
 
-El estado interno se guarda actualmente en:
+El estado interno se guarda en la carpeta definida en la configuración, en `Pedidos.StateFolder`.
 
-```text
-%ProgramData%\SCS\PedidosLiberados
-```
-
-Dentro de esta ubicación se almacenan:
+Dentro de esa ubicación se almacenan:
 
 - estado de los documentos;
 - eventos;
@@ -543,11 +511,7 @@ Se generan logs técnicos diarios con denominaciones similares a:
 PedidosLiberados_20260810.log
 ```
 
-y se almacenan en:
-
-```text
-%ProgramData%\SCS\PedidosLiberados
-```
+y se almacenan en la misma carpeta de estado (`Pedidos.StateFolder`).
 
 Los logs permiten revisar errores de:
 
@@ -752,7 +716,7 @@ Incluye:
 - tiempos de reintento;
 - directorio de estado;
 - configuración SMTP/Exchange;
-- remitente;
+- remitente y nombre de la organización (para el asunto);
 - confirmaciones de correo;
 - firma.
 
