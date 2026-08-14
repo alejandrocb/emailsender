@@ -179,7 +179,7 @@ function Import-XlsxFirstSheet {
         $sstText = Read-ZipText $zip "xl/sharedStrings.xml"
         if ($sstText) {
             [xml]$sst = $sstText
-            foreach ($si in $sst.sst.si) {
+            foreach ($si in $sst.SelectNodes("/*[local-name()='sst']/*[local-name()='si']")) {
                 $shared += [string]$si.InnerText
             }
         }
@@ -541,7 +541,7 @@ function Update-Dashboard {
 <div class="kpi"><div class="n">$pending</div>Pendientes</div>
 <div class="kpi"><div class="n">$sent</div>Enviados hoy</div>
 <div class="kpi"><div class="n">$incidents</div>Incidencias</div>
-<p><b>Para forzar una revision inmediata:</b> ejecute <code>EJECUTAR_AHORA.cmd</code>.</p>
+<p><b>Para forzar una revision inmediata:</b> ejecute <code>PedidosLiberados.ps1 -Manual</code>.</p>
 <table><thead><tr><th>Pedido</th><th>Proveedor</th><th>Empresa</th><th>Estado</th><th>Intentos</th><th>Error</th><th>Archivo</th></tr></thead><tbody>$($rows.ToString())</tbody></table>
 </body></html>
 "@
